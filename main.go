@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecs"
+	"github.com/google/go-github/github"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -21,7 +24,8 @@ var (
 func main() {
 	kingpin.Version("0.0.1")
 	kingpin.Parse()
-	latestAgentVersion := "1.17.0"
+	//latestAgentVersion := "1.17.0"
+	ctx := context.Background()
 
 	creds := credentials.NewSharedCredentials(*awsCredsFile, *awsProfile)
 
@@ -34,6 +38,14 @@ func main() {
 	}
 
 	client := ecs.New(sess)
+
+	github := github.NewClient(nil)
+	rel, _, err := github.Repositories.GetLatestRelease(ctx, "aws", "amazon-ecs-agent")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	latestAgentVersion := strings.Replace(*rel.TagName, "v", "", -1)
 
 	resp, err := client.ListContainerInstances(&ecs.ListContainerInstancesInput{
 		Cluster: aws.String(*cluster),
@@ -52,7 +64,7 @@ func main() {
 
 	for _, c := range instances.ContainerInstances {
 		if *c.VersionInfo.AgentVersion != latestAgentVersion {
-			fmt.Println("Updating container agent")
+			fmt.Printf("Updating container agent to version: %s\n", latestAgentVersion)
 			_, err := client.UpdateContainerAgent(&ecs.UpdateContainerAgentInput{
 				Cluster:           aws.String(*cluster),
 				ContainerInstance: c.ContainerInstanceArn,
@@ -61,7 +73,7 @@ func main() {
 				log.Fatal(err)
 			}
 		} else {
-			fmt.Println("Container agent up to date")
+			fmt.Printf("Container agent up to date. Latest Agent version is: %s\n", latestAgentVersion)
 		}
 	}
 }
